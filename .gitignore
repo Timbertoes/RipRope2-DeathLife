@@ -4,17 +4,25 @@
 *.pidb
 *.unityproj
 .DS_Store
-Library/AssetImportState
-Library/AssetServerCacheV3
-Library/FailedAssetImports.txt
-Library/ScriptAssemblies
-Library/ScriptMapper
+
 Library/assetDatabase3
 Library/cache
 Library/expandedItems
 Library/metadata
 Library/previews
 Library/guidmapper
+
+Library/AnnotationManager
+Library/AssetImportState
+Library/AssetServerCacheV3
+Library/AssetVersioning.db
+Library/FailedAssetImports.txt
+Library/ScriptAssemblies
+Library/ScriptMapper
+
+#Library/CurrentLayout.dwlt is necessary to preserve camera angle etc
+#Library/*.prefs and *.asset is required to preserve preferences I believe
+
 /obj
 /Temp
 /Working
