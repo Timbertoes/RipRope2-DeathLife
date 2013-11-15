@@ -3,77 +3,83 @@ using System.Collections;
 
 public class PlayerControl:MonoBehaviour
 {
+	
+	public LayerMask groundMask;   // Easier to set the mask in the inspector rather than shifting bits.
+	public Transform sphereTrans;  // Temp - Used for snapping the sprite / model to the surface on slopes
 
-	public Transform groundCheck;
-	public LayerMask groundMask;
-	public Transform sphereTrans; // Temp
+	private float speed = 15.0f;   // Generic Player Speed - Used in Fixed Update
 
-	private float speed = 15.0f;
+	private bool grounded = false; // Is the player touching the ground in any way?
+	private bool jump = false;     // Should the player jump this frame?
+	private bool onSlope = false;  // Is the player on uneven terrain / a slope?
 
-	private bool grounded = false;
-	private bool jump = false;
-	private bool onSlope = false;
-
-	private int jumps = 0;
+	private int jumps = 0;         // Jumps left. 1 = Single Jump, 2 = Double Jump
 
 	// Custom Raycast Support
-	private Vector3 rayOrigin = Vector3.zero;
-	private Vector3 rayDirection = Vector3.zero;
-	private RaycastHit2D hitBottomLeft;
-	private RaycastHit2D hitBottomRight;
-	private Vector3 PlayerBottomLeft = Vector3.zero;
-	private Vector3 PlayerBottomRight = Vector3.zero;
+	private Vector3 rayOrigin = Vector3.zero;         // Reusable Ray Origin Varible
+	private Vector3 rayDirection = Vector3.zero;      // Reusable Ray Direction Variable
+	private RaycastHit2D hitBottomLeft;               // Hit info for bottom left (downward) raycast
+	private RaycastHit2D hitBottomRight;              // Hit info for bottom right (downward) raycast
+	private Vector3 PlayerBottomLeft = Vector3.zero;  // Offset from player origin to bottom-left
+	private Vector3 PlayerBottomRight = Vector3.zero; // Offset from player origin to bottom-right
 
 	// Sprite / Character Visual Adjustment
-	private Vector3 visualOffset = Vector3.zero;
+	private Vector3 visualOffset = Vector3.zero; // Offset of sprite / model from collision box
 
-	// Use this for initialization
+	// Begin MonoBehaviour Methods
+
 	void Start()
 	{
-		Vector3 extents = new Vector3(0.5f, 1.0f, 0f);
+		// Get extents for gathering player bounds and offsets
+		Vector3 extents = GetComponent<BoxCollider2D>().size * 0.5f; // No longer hard-coded
+
 		PlayerBottomLeft.Set(-extents.x, -extents.y, 0f);
 		PlayerBottomRight.Set(extents.x, -extents.y, 0f);
-
 	}
-	
-	// Update is called once per frame
+
 	void Update()
 	{
-		float rayDist = 2.0f;
-		float distTollerance = 1.0f / (50.0f*rayDist); // Small enough?
-
+		float rayDist = 2.0f; // Distance to cast rays
+		float distTollerance = 1.0f / (50.0f*rayDist); // Small enough? Tolerance for considering player grounded
 		//Debug.Log (distTollerance);
 
+		//TODO wrap these into a more efficient function
+
+		// Raycast down from bottom left
 		rayOrigin = transform.position + PlayerBottomLeft;
 		rayDirection = Vector3.down;
 		hitBottomLeft = Physics2D.Raycast(rayOrigin, rayDirection, rayDist, groundMask);
 		Debug.DrawRay(rayOrigin, rayDirection * rayDist * hitBottomLeft.fraction, Color.yellow);
 
+		// Raycast down from bottom right
 		rayOrigin = transform.position + PlayerBottomRight;
 		rayDirection = Vector3.down;
 		hitBottomRight = Physics2D.Raycast(rayOrigin, rayDirection, rayDist, groundMask);
 		Debug.DrawRay(rayOrigin, rayDirection * rayDist * hitBottomRight.fraction, Color.yellow);
 
 		// Set Grounded Variables
-		grounded = false;
+		grounded = false; // Reset
 
 		if(hitBottomLeft.collider != null && hitBottomLeft.fraction <= rayDist * distTollerance)
 		{
+			// Bottom left raycast hit something, and its within the tollerance. That foot is grounded
 			grounded = true;
 		}
 		if(hitBottomRight.collider != null && hitBottomRight.fraction <= rayDist * distTollerance)
 		{
+			// Bottom right raycast hit something, and its within the tollerance. That foot is grounded
 			grounded = true;
 		}
 
 		// Detect if on slope
-		onSlope = false;
+		onSlope = false; // Reset
 
 		if(hitBottomLeft.collider != null && hitBottomRight.collider != null)
 		{
 			// Both colliders are hitting something.
 			if(hitBottomLeft.fraction != hitBottomRight.fraction)
 			{
+				// Distance for both hits is unequal. Terrain is uneven / sloping
 				onSlope = true;
 			}
 		}
@@ -81,7 +87,7 @@ public class PlayerControl:MonoBehaviour
 		// Handle Jumps
 		if(grounded)
 		{
-			jumps = 2; // Double Jump
+			jumps = 2; // Reset if grounded. 1 = Single, 2 = Double Jump
 		}
 
 		if(Input.GetButtonDown("Jump") && jumps > 0)
@@ -95,42 +101,48 @@ public class PlayerControl:MonoBehaviour
 
 		float xInput = Input.GetAxis("Horizontal"); // horizontal / X-Movement. Joystick compatible
 
-		//Use input to move player left and right. Pass Y through.
+		//Use input to move player left and right. Pass Y-Velocity through.
 		rigidbody2D.velocity = new Vector2(xInput * speed, rigidbody2D.velocity.y);
 
 		if(grounded)
 		{
+			// When grounded, allow simply moving left and right.
 			float xVelocity = rigidbody2D.velocity.x;
 			float yVelocity = 0.0f;
 
 			if(onSlope)
 			{
-				Vector2 averageNormal = (hitBottomLeft.normal + hitBottomRight.normal) * 0.5f;
+				// When grounded AND on a slope, lock onto the slope -- no bouncing downhill.
+				Vector2 averageNormal = (hitBottomLeft.normal + hitBottomRight.normal) * 0.5f; // Averaged hit normal of both rayCasts
+
 				// Draw Normal in Green
 				Debug.DrawRay(hitBottomLeft.point, averageNormal, Color.green);
 				Debug.DrawRay(hitBottomRight.point, averageNormal, Color.green);
 
-				//Draw moveDirection in Red
-				averageNormal.Set(averageNormal.y, -averageNormal.x);
-				averageNormal.Normalize();
-				averageNormal*= (xInput * speed);
+				averageNormal.Set(averageNormal.y, -averageNormal.x); // Rotate averageNormal by 90 degrees
+				averageNormal.Normalize();                            // Normalize so we can scale it
+				averageNormal*= (xInput * speed);                     // Scale it by move speed
 
+				// Draw moveDirection in Red
 				Debug.DrawRay(hitBottomLeft.point, averageNormal*0.1f, Color.red);
 				Debug.DrawRay(hitBottomRight.point, averageNormal*0.1f, Color.red);
 
-				// Debug.Log (averageNormal);
-
+				// Set speed parallel to the average surface.
 				xVelocity = averageNormal.x;
 				yVelocity = averageNormal.y;
 			}
 			Debug.Log(hitBottomLeft.fraction);
 
+			// Set velocity to whatever the variables have been set to by now (sloped or not sloped)
 			rigidbody2D.velocity = new Vector2(xVelocity, yVelocity);
 
 		}else{
+
+			// Not grounded. Add Gravity.
 			rigidbody2D.AddForce(new Vector2(0f,-4000f)); // Gravity
 		}
 
+		// Jumping
 		if(jump && jumps > 0)
 		{
 			rigidbody2D.velocity = new Vector2(rigidbody2D.velocity.x, 25f); // Set X absolutely, preserve Y
@@ -138,7 +150,7 @@ public class PlayerControl:MonoBehaviour
 			jumps--;
 		}
 
-		// Update Graphics
+		// Update Graphics - Offset from Collision Box
 		if(grounded)
 		{
 			//hitBottomLeft.fraction
@@ -147,13 +159,6 @@ public class PlayerControl:MonoBehaviour
 		}else{
 			visualOffset.Set(0f,-1f,0f);
 		}
-
-		/*
-		if(Input.GetKeyDown(KeyCode.LeftShift))
-		{
-			rigidbody2D.AddForce(new Vector2(1000000f,0f));
-		}
-		*/
 
 		//sphereTrans.localPosition = visualOffset;
 
