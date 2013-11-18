@@ -19,8 +19,8 @@ public class CameraFollow : MonoBehaviour {
 	{
 		targetPos = followObj.position;
 		
-		newCameraPos.x -= (this.transform.position.x - targetPos.x) * 0.1f;
-		newCameraPos.y -= (this.transform.position.y - targetPos.y) * 0.1f;
+		newCameraPos.x -= (this.transform.position.x - targetPos.x) * 0.1f;// * Time.deltaTime * 50f;
+		newCameraPos.y -= (this.transform.position.y - targetPos.y) * 0.1f;// * Time.deltaTime * 50f;
 		
 		this.transform.position = newCameraPos;
 	}
