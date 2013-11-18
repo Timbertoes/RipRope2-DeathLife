@@ -25,7 +25,8 @@ public class PlayerControl:MonoBehaviour
 	private RaycastHit2D hitBottomRight;              // Hit info for bottom right (downward) raycast
 	private Vector3 PlayerBottomLeft = Vector3.zero;  // Offset from player origin to bottom-left
 	private Vector3 PlayerBottomRight = Vector3.zero; // Offset from player origin to bottom-right
-	private float skinWidth = 0.05f;					// Move rayOrigin inside the collider by this amount
+	private float rayDist = 2.0f; 			            // Distance to cast rays
+	private float distTollerance = 0.01f;              // Distance to consider grounded (percent of fraction)
 
 	// Sprite / Character Visual Adjustment
 	private Vector3 visualOffset = Vector3.zero; // Offset of sprite / model from collision box
@@ -36,7 +37,7 @@ public class PlayerControl:MonoBehaviour
 	private Vector3 activeGlobalPlatformPoint;
 	private Vector3 lastPlatformVelocity;
 
-	private Transform lastPlatform;
+	//private Transform lastPlatform; // Deprecated
 	private Vector3 lastPlatformPosition;
 
 	// Begin MonoBehaviour Methods
@@ -44,19 +45,25 @@ public class PlayerControl:MonoBehaviour
 	void Start()
 	{
 		activePlatform = null;
-		lastPlatform = null;
+		//lastPlatform = null;
 
 		// Get extents for gathering player bounds and offsets
 		Vector3 extents = GetComponent<BoxCollider2D>().size * 0.5f; // No longer hard-coded
 
 		PlayerBottomLeft.Set(-extents.x, -extents.y, 0f);
 		PlayerBottomRight.Set(extents.x, -extents.y, 0f);
+
+		// Raycast Support
+		rayDist = 2.0f; // Distance to cast rays
+
+		//If distTollerance is too low, we won't ground and be able to jump.
+		distTollerance = (1.0f / (50.0f*rayDist)); // Small enough? Tolerance for considering player grounded.
+		distTollerance *= rayDist; // Scale to rayDist since we get it as a percent from the RaycastHit2D
 	}
 
 	void Update()
 	{
-		//Debug.Log("GetPos in Update");
-		// Update detects input and sets variables. Movement in FixedUpdate
+		// Update detects input and sets variables. Movement/Physics in FixedUpdate
 		if(Input.GetButtonDown("Jump") && jumps > 0)
 		{
 			jump = true;
@@ -67,8 +74,7 @@ public class PlayerControl:MonoBehaviour
 	void FixedUpdate()
 	{
 		// Raycasts. TODO considder using RaycastNonAlloc for memory purposes
-		float rayDist = 2.0f; // Distance to cast rays
-		float distTollerance = (1.0f / (75.0f*rayDist)); // Small enough? Tolerance for considering player grounded
+
 		//distTollerance = 0.06f;
 		//Debug.Log (distTollerance);
 		
@@ -89,25 +95,18 @@ public class PlayerControl:MonoBehaviour
 		// Set Grounded Variables
 		grounded = false; // Reset
 		
-		if(hitBottomLeft.collider != null && hitBottomLeft.fraction <= rayDist * distTollerance)
+		//if(hitBottomLeft.collider != null && hitBottomLeft.fraction <= rayDist * distTollerance)
+		if(raycastDistance(hitBottomLeft, distTollerance))
 		{
 			// Bottom left raycast hit something, and its within the tollerance. That foot is grounded
 			grounded = true;
-
-			//Snap to ground
-			if(hitBottomLeft.normal.y == 1.0f)
-			{
-				//transform.Translate(0f, hitBottomLeft.fraction * rayDist * -1f,0f);
-			}
 		}
-		if(hitBottomRight.collider != null && hitBottomRight.fraction <= rayDist * distTollerance)
+
+		//if(hitBottomRight.collider != null && hitBottomRight.fraction <= rayDist * distTollerance)
+		if(raycastDistance(hitBottomRight, distTollerance))
 		{
 			// Bottom right raycast hit something, and its within the tollerance. That foot is grounded
 			grounded = true;
-			if(hitBottomRight.normal.y == 1.0f)
-			{
-				//transform.Translate(0f, hitBottomRight.fraction * rayDist * -1f,0f);
-			}
 		}
 
 		//Debug.Log (hitBottomRight.
@@ -150,6 +149,7 @@ public class PlayerControl:MonoBehaviour
 				Vector2 averageNormal = (hitBottomLeft.normal + hitBottomRight.normal) * 0.5f; // Averaged hit normal of both rayCasts
 				//averageNormal.Normalize();
 
+				//This was to reduce speed as you go up a slope. Not really necessary. Added slide.
 				/*
 				float slopeMultiplier = 1.0f;
 				float slopeTollerance = 0.8f;
@@ -187,6 +187,7 @@ public class PlayerControl:MonoBehaviour
 			}
 			// Debug.Log(hitBottomLeft.fraction);
 
+			// TODO: horizontal movement on platforms inherits a lot. See if it should be reduced.
 			// Mod if on platform
 			//xVelocity -= lastPlatformVelocity.x;
 			//yVelocity -= lastPlatformVelocity.y;
@@ -226,99 +227,66 @@ public class PlayerControl:MonoBehaviour
 
 		movingPlatformLogic();
 	} // End FixedUpdate
-
-	void LateUpdate()
+	
+	// Begin custom methods - Alphabetical
+	void movingPlatformLogic()
 	{
-		//Debug.Log("Get in LateUpdate");
-		//movingPlatformLogic(); // Get position of platforms after they've been updated
-	}
+		//TODO: Clean it up a bit.
+		Collider2D leftPlatform = null;
+		Collider2D rightPlatform = null;
+		Collider2D newPlatform = null;
 
-	void OnCollisionEnter2D(Collision2D collision)
-	{
-		// Mostly Platform Support
-
-		//Debug.Log("OnCollisionEnter2D: "+collision.contacts[0].normal);
-
-		// TODO: Globalize this:
-		// Get normalized direction of hit from center of player. Gives us an idea of where it came from.
-		Vector2 hitDirection = collision.contacts[0].point - (Vector2)transform.position;
-		hitDirection.Normalize();
-
-		//Debug.Log (hitDirection + " : " + collision.contacts[0].normal);
-		Debug.DrawRay(collision.contacts[0].point, collision.contacts[0].normal, Color.blue, 0.5f);
-
-		//activePlatform = null; // Reset
-		// Collision from the bottom with a mostly horizontal platform!
-		if(hitDirection.y < 0.0f && collision.contacts[0].normal.y > 0.9f)
+		// Detect if either ray has a potential platform beneath it
+		if(raycastDistance(hitBottomLeft, distTollerance) && hitBottomLeft.normal.y > 0.5f)
 		{
-			//Debug.Log("activePlatform Set: "+collision.collider.transform);
-			//grounded = true;
-			activePlatform = collision.collider.transform;
-			activePlatform.renderer.sharedMaterial = activePlatformMaterial;
+			// Left foot is grounded
+			leftPlatform = hitBottomLeft.collider;
 		}
 
-		if(activePlatform != lastPlatform)
+		if(raycastDistance(hitBottomRight, distTollerance) && hitBottomRight.normal.y > 0.5f)
+		{
+			// Right foot is grounded
+			rightPlatform = hitBottomRight.collider;
+		}
+
+		if(leftPlatform == null && rightPlatform == null)
 		{
 			if(activePlatform != null)
 			{
-				// New platform!
-				//Debug.Log("Reset PlatVel");
-				lastPlatformPosition = activePlatform.position;
-				lastPlatform = activePlatform;
-			}else{
-				lastPlatformPosition = collision.collider.transform.position;
-				lastPlatform = null;
+				Debug.Log("(Set Active Platform to NULL)");
+				activePlatform.renderer.sharedMaterial = defaultMaterial;
+				activePlatform = null; // Reset
+				//lastPlatform = null;
 			}
 		}
-
-	} // End OnCollisionEnter2D
-
-	void OnCollisionExit2D(Collision2D collision)
-	{
-		Debug.Log("OnCollisionExit2D: "+collision.collider);
-
-		if(collision.collider.transform == activePlatform)
+		else if(leftPlatform != null && rightPlatform != null && activePlatform != null)
 		{
-			activePlatform = null; // Reset
-			lastPlatform = null;
+			newPlatform = null; // Transferring horizontal platforms while one is active.
+		}
+		else if(leftPlatform != null)
+		{
+			newPlatform = leftPlatform;
+		}
+		else if(rightPlatform != null)
+		{
+			newPlatform = rightPlatform;
 		}
 
-		if(collision.gameObject.renderer.sharedMaterial == activePlatformMaterial)
+		if(newPlatform != null && activePlatform != newPlatform.collider2D.transform)
 		{
-			collision.gameObject.renderer.sharedMaterial = defaultMaterial;
-		}
-		
-	}
-	
-	// Begin custom methods
-	void movingPlatformLogic()
-	{
-		/*
-		//Suggested Method
-		if (activePlatform != null)
-		{
-			Debug.Log("Platform:"+activePlatform+Random.Range(10,99));
-
-			// -
-			Vector3 newGlobalPlatformPoint = activePlatform.TransformPoint(activeLocalPlatformPoint);
-			Vector3 moveDistance = (newGlobalPlatformPoint - activeGlobalPlatformPoint);
-
-			if (moveDistance != Vector3.zero)
+			// New Platform
+			Debug.Log("Set Active Platform to "+newPlatform);
+			if(activePlatform != null)
 			{
-				transform.Translate(moveDistance);
+				activePlatform.renderer.sharedMaterial = defaultMaterial;
 			}
 
-			lastPlatformVelocity = (newGlobalPlatformPoint - activeGlobalPlatformPoint);
+			activePlatform = newPlatform.collider2D.transform;
+			activePlatform.renderer.sharedMaterial = activePlatformMaterial;
 
-			// -
-
-			activeGlobalPlatformPoint = transform.position;
-			activeLocalPlatformPoint = activePlatform.InverseTransformPoint(transform.position);
-
-		}else{
-			lastPlatformVelocity = Vector3.zero;
+			lastPlatformPosition = activePlatform.position;
+			//lastPlatform = activePlatform;
 		}
-		*/
 
 		// Andy Method
 		if (activePlatform != null)
@@ -331,6 +299,15 @@ public class PlayerControl:MonoBehaviour
 		}
 	}
 
+	bool raycastDistance(RaycastHit2D hit, float dist)
+	{
+		if(hit.collider != null && hit.fraction <= dist)
+		{
+			return true;
+		}
+		return false;
+	}
+
 }
 
 /*
@@ -341,7 +318,7 @@ public class PlayerControl:MonoBehaviour
  *   [x] Player can go up and down slopes
  *      [x] Player should 'Stick' to slopes. No bouncing downward.
  *   [x] Player can jump / double jump
- *   [ ] Player can interact with moving platforms
+ *   [x] Player can interact with moving platforms
  *   [ ] Player can dash
  *   [ ] Player can cling / slide down walls
  *      [ ] While clinging, player can jump to let go or wall jump upward / outward

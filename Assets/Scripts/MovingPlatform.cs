@@ -9,7 +9,6 @@ public class MovingPlatform : MonoBehaviour
 	
 	private Vector3 startPosition;
 
-	private int frame = 0;
 	private float increment = 0f;
 
 	// Use this for initialization
